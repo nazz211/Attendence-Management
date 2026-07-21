@@ -1,4 +1,4 @@
-# Employee Attendance Management System
+# Employee Attendance Management System v2
 
 A simple role-based attendance system built with React (Vite), FastAPI, PostgreSQL, SQLAlchemy, and JWT authentication.
 
@@ -14,7 +14,10 @@ A simple role-based attendance system built with React (Vite), FastAPI, PostgreS
 Create a PostgreSQL database (adjust the user/password to match your PostgreSQL installation):
 
 ```sql
-CREATE DATABASE attendance_db;
+CREATE USER at_user WITH PASSWORD '12345678';
+CREATE DATABASE attendance_db OWNER at_user;
+
+
 ```
 
 ## Backend setup
