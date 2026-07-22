@@ -1,4 +1,4 @@
-# Employee Attendance Management System v2
+# Employee Attendance Management System 
 
 A simple role-based attendance system built with React (Vite), FastAPI, PostgreSQL, SQLAlchemy, and JWT authentication.
 
