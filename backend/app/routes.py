@@ -47,21 +47,21 @@ def me(current_user: User = Depends(get_current_user)):
     return current_user
 
 @router.put("/profile", response_model=UserOut)
-def update_profile(data: ProfileUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def update_profile(data: ProfileUpdate, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
     current_user.name = data.name.strip()
     current_user.phone_number = data.phone_number.strip() if data.phone_number else None
     db.commit(); db.refresh(current_user)
     return current_user
 
 @router.put("/profile/password", status_code=status.HTTP_204_NO_CONTENT)
-def change_password(data: PasswordChange, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def change_password(data: PasswordChange, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
     if not verify_password(data.current_password, current_user.password_hash):
         raise HTTPException(status_code=400, detail="Current password is incorrect")
     current_user.password_hash = hash_password(data.new_password)
     db.commit()
 
 @router.post("/profile/image", response_model=UserOut)
-async def upload_profile_image(file: UploadFile = File(...), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def upload_profile_image(file: UploadFile = File(...), db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
     suffix = Path(file.filename or "").suffix.lower()
     if file.content_type not in ALLOWED_IMAGE_TYPES or suffix not in ALLOWED_IMAGE_SUFFIXES:
         raise HTTPException(status_code=400, detail="Only JPG, JPEG, and PNG images are allowed")
@@ -105,7 +105,7 @@ def list_users(db: Session = Depends(get_db), _: User = Depends(require_admin)):
 
 @router.post("/users", response_model=UserOut, status_code=status.HTTP_201_CREATED)
 def create_user(data: UserCreate, db: Session = Depends(get_db), _: User = Depends(require_admin)):
-    user = User(name=data.name.strip(), email=data.email.lower(), password_hash=hash_password(data.password), role=Role.employee)
+    user = User(name=data.name, email=data.email.lower(), password_hash=hash_password(data.password), phone_number=data.phone_number, role=Role.employee)
     db.add(user)
     try:
         db.commit()
@@ -117,13 +117,36 @@ def create_user(data: UserCreate, db: Session = Depends(get_db), _: User = Depen
 def update_user(user_id: int, data: UserUpdate, db: Session = Depends(get_db), _: User = Depends(require_admin)):
     user = db.get(User, user_id)
     if not user or user.role != Role.employee: raise HTTPException(status_code=404, detail="Employee not found")
-    user.name, user.email = data.name.strip(), data.email.lower()
+    user.name, user.email = data.name, data.email.lower()
     if data.password: user.password_hash = hash_password(data.password)
+    if "phone_number" in data.model_fields_set: user.phone_number = data.phone_number
     try:
         db.commit()
     except IntegrityError:
         db.rollback(); raise HTTPException(status_code=409, detail="Email is already in use")
     db.refresh(user); return user
+
+@router.post("/users/{user_id}/image", response_model=UserOut)
+async def upload_user_image(user_id: int, file: UploadFile = File(...), db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    user = db.get(User, user_id)
+    if not user or user.role != Role.employee:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    suffix = Path(file.filename or "").suffix.lower()
+    if file.content_type not in ALLOWED_IMAGE_TYPES or suffix not in ALLOWED_IMAGE_SUFFIXES:
+        raise HTTPException(status_code=400, detail="Only JPG, JPEG, and PNG images are allowed")
+    content = await file.read()
+    if not content or len(content) > 2 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Profile image must be 2 MB or smaller")
+    is_jpeg = content.startswith(b"\xff\xd8\xff")
+    is_png = content.startswith(b"\x89PNG\r\n\x1a\n")
+    if not is_jpeg and not is_png:
+        raise HTTPException(status_code=400, detail="Uploaded file is not a valid JPG or PNG image")
+    PROFILE_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    filename = f"{user.id}_{uuid4().hex}{suffix}"
+    (PROFILE_UPLOAD_DIR / filename).write_bytes(content)
+    user.profile_image = f"/uploads/profile/{filename}"
+    db.commit(); db.refresh(user)
+    return user
 
 @router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_user(user_id: int, db: Session = Depends(get_db), _: User = Depends(require_admin)):

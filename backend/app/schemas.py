@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 from .models import Role, AttendanceStatus
 
 class LoginRequest(BaseModel):
@@ -15,11 +15,39 @@ class UserCreate(BaseModel):
     name: str = Field(min_length=2, max_length=120)
     email: EmailStr
     password: str = Field(min_length=6, max_length=128)
+    phone_number: str | None = Field(default=None, max_length=30)
+
+    @field_validator("name")
+    @classmethod
+    def normalize_name(cls, value: str) -> str:
+        value = " ".join(value.split())
+        if len(value) < 2:
+            raise ValueError("Name must contain at least 2 characters")
+        return value
+
+    @field_validator("phone_number")
+    @classmethod
+    def normalize_phone_number(cls, value: str | None) -> str | None:
+        return value.strip() or None if value else None
 
 class UserUpdate(BaseModel):
     name: str = Field(min_length=2, max_length=120)
     email: EmailStr
     password: str | None = Field(default=None, min_length=6, max_length=128)
+    phone_number: str | None = Field(default=None, max_length=30)
+
+    @field_validator("name")
+    @classmethod
+    def normalize_name(cls, value: str) -> str:
+        value = " ".join(value.split())
+        if len(value) < 2:
+            raise ValueError("Name must contain at least 2 characters")
+        return value
+
+    @field_validator("phone_number")
+    @classmethod
+    def normalize_phone_number(cls, value: str | None) -> str | None:
+        return value.strip() or None if value else None
 
 class UserOut(BaseModel):
     id: int
@@ -68,6 +96,19 @@ class OfficeSettingsOut(BaseModel):
 class ProfileUpdate(BaseModel):
     name: str = Field(min_length=2, max_length=120)
     phone_number: str | None = Field(default=None, max_length=30)
+
+    @field_validator("name")
+    @classmethod
+    def normalize_name(cls, value: str) -> str:
+        value = " ".join(value.split())
+        if len(value) < 2:
+            raise ValueError("Name must contain at least 2 characters")
+        return value
+
+    @field_validator("phone_number")
+    @classmethod
+    def normalize_phone_number(cls, value: str | None) -> str | None:
+        return value.strip() or None if value else None
 
 class PasswordChange(BaseModel):
     current_password: str = Field(min_length=1)

@@ -384,6 +384,20 @@ Routing:
 * `/` → Frontend
 * `/api` → Backend
 
+The repository includes a site configuration that also supports direct React
+Router links such as `/admin`, `/admin/employees`, and `/admin/attendance`.
+
+```bash
+sudo install -d -m 755 /var/www/attendance-management
+sudo cp -r frontend/dist/. /var/www/attendance-management/
+sudo cp deploy/nginx/attendance-management.conf /etc/nginx/sites-available/attendance-management.conf
+sudo ln -s /etc/nginx/sites-available/attendance-management.conf /etc/nginx/sites-enabled/attendance-management.conf
+sudo rm /etc/nginx/sites-enabled/default
+```
+
+After each frontend build, copy `frontend/dist/.` into
+`/var/www/attendance-management/` again before reloading Nginx.
+
 Test configuration.
 
 ```bash

@@ -11,14 +11,21 @@ const useAuth = () => useContext(AuthContext)
 
 function AuthProvider({ children }) {
   const [user, setUser] = useState(() => JSON.parse(localStorage.getItem('user') || 'null'))
+  const [ready, setReady] = useState(false)
   const login = (data) => { localStorage.setItem('token', data.access_token); localStorage.setItem('user', JSON.stringify(data.user)); setUser(data.user) }
   const updateUser = (nextUser) => { localStorage.setItem('user', JSON.stringify(nextUser)); setUser(nextUser) }
   const logout = () => { localStorage.removeItem('token'); localStorage.removeItem('user'); setUser(null) }
-  return <AuthContext.Provider value={{ user, login, updateUser, logout }}>{children}</AuthContext.Provider>
+  React.useEffect(() => {
+    const token = localStorage.getItem('token')
+    if (!token) { setReady(true); return }
+    api.get('/auth/me').then(({ data }) => updateUser(data)).catch(logout).finally(() => setReady(true))
+  }, [])
+  return <AuthContext.Provider value={{ user, login, updateUser, logout, ready }}>{children}</AuthContext.Provider>
 }
 
 function ProtectedRoute({ role, children }) {
-  const { user } = useAuth()
+  const { user, ready } = useAuth()
+  if (!ready) return <main className="app-loading">Checking your session…</main>
   if (!user) return <Navigate to="/login" replace />
   if (role && user.role !== role) return <Navigate to={user.role === 'admin' ? '/admin' : '/employee'} replace />
   return children
@@ -79,6 +86,8 @@ function EmployeeDashboard() {
 }
 
 function ProfileSettings() {
+  const { user: profileUser } = useAuth()
+  return <Layout><PageTitle title="My profile" /><div className="profile-grid"><section className="panel profile-picture"><h2>Profile picture</h2>{profileUser.profile_image ? <img className="profile-image" src={`${API_ORIGIN}${profileUser.profile_image}`} alt={`${profileUser.name}'s profile`} /> : <div className="profile-image placeholder">{profileUser.name?.charAt(0)?.toUpperCase()}</div>}<small>Your administrator manages your profile picture and account details.</small></section><section className="panel form"><h2>Profile information</h2><label>Full name<input value={profileUser.name} disabled /></label><label>Email<input value={profileUser.email} disabled /></label><label>Phone number<input value={profileUser.phone_number || 'Not provided'} disabled /></label><label>Role<input value="Employee" disabled /></label></section></div></Layout>
   const { user, updateUser } = useAuth()
   const [profile, setProfile] = useState({ name: user.name, phone_number: user.phone_number || '' }), [passwords, setPasswords] = useState({ current_password: '', new_password: '', confirm_password: '' }), [message, setMessage] = useState(''), [error, setError] = useState(''), [uploading, setUploading] = useState(false)
   function showError(value) { setMessage(''); setError(value) }
@@ -89,13 +98,16 @@ function ProfileSettings() {
 }
 
 function Employees() {
-  const empty = { name: '', email: '', password: '' }; const [users, setUsers] = useState([]), [form, setForm] = useState(empty), [editing, setEditing] = useState(null), [error, setError] = useState('')
-  const load = () => api.get('/users').then(r => setUsers(r.data)).catch(() => setError('Could not load employees')); React.useEffect(() => { load() }, [])
+  const empty = { name: '', email: '', password: '', phone_number: '' }
+  const [users, setUsers] = useState([]), [form, setForm] = useState(empty), [editing, setEditing] = useState(null), [profileImage, setProfileImage] = useState(null), [error, setError] = useState(''), [message, setMessage] = useState(''), [loading, setLoading] = useState(true), [saving, setSaving] = useState(false)
+  const load = async () => { setLoading(true); try { const { data } = await api.get('/users'); setUsers(data) } catch (e) { setError(e.response?.data?.detail || 'Could not load employees') } finally { setLoading(false) } }
+  React.useEffect(() => { load() }, [])
   function change(e) { setForm({ ...form, [e.target.name]: e.target.value }) }
-  async function submit(e) { e.preventDefault(); setError(''); try { const payload = editing && !form.password ? { name: form.name, email: form.email } : form; if (editing) await api.put(`/users/${editing}`, payload); else await api.post('/users', payload); setForm(empty); setEditing(null); load() } catch (e) { setError(e.response?.data?.detail || 'Could not save employee') } }
-  function edit(u) { setEditing(u.id); setForm({ name: u.name, email: u.email, password: '' }) }
-  async function remove(id) { if (!window.confirm('Delete this employee and their attendance records?')) return; try { await api.delete(`/users/${id}`); load() } catch (e) { setError(e.response?.data?.detail || 'Could not delete employee') } }
-  return <Layout><PageTitle title="Employee management" />{error && <div className="alert error">{error}</div>}<div className="split"><form className="panel form" onSubmit={submit}><h2>{editing ? 'Edit employee' : 'Add employee'}</h2><label>Name<input name="name" value={form.name} onChange={change} required /></label><label>Email<input name="email" type="email" value={form.email} onChange={change} required /></label><label>Password<input name="password" type="password" value={form.password} onChange={change} required={!editing} placeholder={editing ? 'Leave blank to keep current password' : ''} /></label><div className="actions"><button>{editing ? 'Save changes' : 'Create employee'}</button>{editing && <button type="button" className="secondary" onClick={() => { setEditing(null); setForm(empty) }}>Cancel</button>}</div></form><div className="panel table-panel"><h2>Employees</h2><table><thead><tr><th>Name</th><th>Email</th><th>Created</th><th></th></tr></thead><tbody>{users.map(u => <tr key={u.id}><td>{u.name}</td><td>{u.email}</td><td>{fmtDate(u.created_at.slice(0, 10))}</td><td className="row-actions"><button className="text" onClick={() => edit(u)}>Edit</button><button className="text danger" onClick={() => remove(u.id)}>Delete</button></td></tr>)}{!users.length && <tr><td colSpan="4" className="empty">No employees yet.</td></tr>}</tbody></table></div></div></Layout>
+  async function submit(e) { e.preventDefault(); setError(''); setMessage(''); setSaving(true); try { const payload = editing && !form.password ? { name: form.name, email: form.email, phone_number: form.phone_number } : form; const { data: employee } = editing ? await api.put(`/users/${editing}`, payload) : await api.post('/users', payload); if (profileImage) { const image = new FormData(); image.append('file', profileImage); await api.post(`/users/${employee.id}/image`, image) } setMessage(editing ? 'Employee details updated.' : 'Employee account created.'); setForm(empty); setEditing(null); setProfileImage(null); await load() } catch (e) { setError(e.response?.data?.detail || 'Could not save employee') } finally { setSaving(false) } }
+  function edit(u) { setError(''); setMessage(''); setEditing(u.id); setProfileImage(null); setForm({ name: u.name, email: u.email, password: '', phone_number: u.phone_number || '' }) }
+  async function remove(id) { if (!window.confirm('Delete this employee and all of their attendance records? This cannot be undone.')) return; setError(''); setMessage(''); try { await api.delete(`/users/${id}`); setMessage('Employee deleted.'); await load() } catch (e) { setError(e.response?.data?.detail || 'Could not delete employee') } }
+  function cancel() { setEditing(null); setForm(empty); setProfileImage(null) }
+  return <Layout><PageTitle title="Employee management" />{message && <div className="alert success" role="status">{message}</div>}{error && <div className="alert error" role="alert">{error}</div>}<div className="split"><form className="panel form" onSubmit={submit}><h2>{editing ? 'Edit employee' : 'Add employee'}</h2><label>Name<input name="name" value={form.name} onChange={change} autoComplete="name" required /></label><label>Email<input name="email" type="email" value={form.email} onChange={change} autoComplete="email" required /></label><label>Phone number<input name="phone_number" type="tel" value={form.phone_number} onChange={change} autoComplete="tel" maxLength="30" /></label><label>Password<input name="password" type="password" value={form.password} onChange={change} autoComplete="new-password" required={!editing} placeholder={editing ? 'Leave blank to keep current password' : ''} /></label><label>Profile picture<input type="file" accept=".jpg,.jpeg,.png,image/jpeg,image/png" onChange={e => setProfileImage(e.target.files?.[0] || null)} /></label><small>{profileImage ? profileImage.name : 'Optional JPG, JPEG, or PNG · maximum 2 MB'}</small><div className="actions"><button disabled={saving}>{saving ? 'Saving…' : editing ? 'Save changes' : 'Create employee'}</button>{editing && <button type="button" className="secondary" onClick={cancel} disabled={saving}>Cancel</button>}</div></form><div className="panel table-panel"><h2>Employees</h2><table><thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Created</th><th><span className="sr-only">Actions</span></th></tr></thead><tbody>{loading && <tr><td colSpan="5" className="empty">Loading employees…</td></tr>}{!loading && users.map(u => <tr key={u.id}><td>{u.name}</td><td>{u.email}</td><td>{u.phone_number || '—'}</td><td>{fmtDate(u.created_at.slice(0, 10))}</td><td className="row-actions"><button className="text" onClick={() => edit(u)}>Edit</button><button className="text danger" onClick={() => remove(u.id)}>Delete</button></td></tr>)}{!loading && !users.length && <tr><td colSpan="5" className="empty">No employees yet.</td></tr>}</tbody></table></div></div></Layout>
 }
 
 function AttendanceTable({ admin = false }) {
