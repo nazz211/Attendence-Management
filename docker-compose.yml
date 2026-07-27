@@ -1,4 +1,5 @@
 services:
+<<<<<<< HEAD
   postgres:
     image: postgres:16
     container_name: attendance_postgres
@@ -16,10 +17,39 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+=======
+
+  db:
+    image: postgres:17
+    container_name: attendance-docker-db
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+>>>>>>> 0a56dfc (Update project)
 
   backend:
     build:
       context: ./backend
+<<<<<<< HEAD
     container_name: attendance_backend
     environment:
       DATABASE_URL: postgresql+psycopg2://rishal_user:12345678@postgres:5432/rishal_db
@@ -46,3 +76,57 @@ services:
 
 volumes:
   postgres_data:
+=======
+
+    container_name: attendance-docker-backend
+    restart: unless-stopped
+
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ALGORITHM: ${JWT_ALGORITHM}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES}
+      CORS_ORIGINS: ${CORS_ORIGINS}
+
+    depends_on:
+      db:
+        condition: service_healthy
+
+    ports:
+      - "127.0.0.1:8001:8000"
+
+    volumes:
+      - uploads_data:/app/uploads
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+
+  frontend:
+    build:
+      context: ./frontend
+
+    container_name: attendance-docker-frontend
+    restart: unless-stopped
+
+    depends_on:
+      - backend
+
+    ports:
+      - "127.0.0.1:3001:80"
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+
+volumes:
+  postgres_data:
+  uploads_data:
+  
+>>>>>>> 0a56dfc (Update project)
